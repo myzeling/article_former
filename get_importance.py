@@ -7,42 +7,6 @@ import numpy as np
 import pickle
 import feather
 
-df = feather.read_dataframe('./factors.feather')
-# df['ret_next'] = df.groupby('id',group_keys =False)['ret_c2c'].shift(-1)
-df = df.rename(columns={'ret_c2c':'ret_next'})
-factors = [i for i in df.columns if i.endswith('_factor')]+['size','volume','amount']
-factors.remove('industry_factor')
-for column in factors:
-    mask = ((df[column] < 1e-8)&(df[column]>0))  # 创建布尔条件掩码
-    df[column] = np.where(mask, 0.00001, df[column])  # 将小于1e-8的数字替换为0.00001
-
-    mask = ((df[column] > -1e-8)&(df[column]<0))  # 创建布尔条件掩码
-    df[column] = np.where(mask, -0.00001, df[column])  # 将大于-1e-8的数字替换为-0.00001
-    mask = (df[column].abs() > 1e40)
-    df[column] = np.where(mask, 0.00001, df[column])
-macros = pd.read_csv('./Macro_factor.csv')
-factor_columns = factors+['date','id','ret_next']
-df = df[factor_columns]
-df['date'] = pd.to_datetime(df['date'])
-macros['date'] = pd.to_datetime(macros['date'])
-df = pd.merge(df,macros,on = 'date',how = 'left')
-df = df[df['date']<='2023-03-31']
-df.replace([np.inf, -np.inf], 0.00001, inplace=True)
-df.fillna(0, inplace=True)
-print("last df's columns are",df.columns)
-grouped = df.groupby('id')
-stock_dict = {}
-id_mapping = {}
-i = 1
-for stock, group in grouped:
-    id_mapping[i] = stock
-    stock_dict[i] = group
-    del stock_dict[i]['id']
-    i+=1
-with open('id_mapping.pkl', 'wb') as f:
-    pickle.dump(id_mapping, f)
-
-
 parser = argparse.ArgumentParser(description='Non-stationary Transformers for Time Series Forecasting')
 
 # basic config
@@ -132,33 +96,48 @@ print(args)
 
 Exp = Exp_train
 
-if args.is_training:
-    for ii in range(args.itr):
-        # setting record of experiments
-        setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(
-            args.model_id,
-            args.model,
-            args.data,
-            args.features,
-            args.seq_len,
-            args.label_len,
-            args.pred_len,
-            args.d_model,
-            args.n_heads,
-            args.e_layers,
-            args.d_layers,
-            args.d_ff,
-            args.factor,
-            args.embed,
-            args.distil,
-            args.des, ii)
 
-        exp = Exp(args,stock_dict)
-        print('>>>>>>>training : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-        exp.train(setting)
-        del exp
-        torch.cuda.empty_cache()
-else:
+df = feather.read_dataframe('./factors.feather')
+# df['ret_next'] = df.groupby('id',group_keys =False)['ret_c2c'].shift(-1)
+df = df.rename(columns={'ret_c2c':'ret_next'})
+factors = [i for i in df.columns if i.endswith('_factor')]+['size','volume','amount']
+factors.remove('industry_factor')
+for column in factors:
+    mask = ((df[column] < 1e-8)&(df[column]>0))  # 创建布尔条件掩码
+    df[column] = np.where(mask, 0.00001, df[column])  # 将小于1e-8的数字替换为0.00001
+
+    mask = ((df[column] > -1e-8)&(df[column]<0))  # 创建布尔条件掩码
+    df[column] = np.where(mask, -0.00001, df[column])  # 将大于-1e-8的数字替换为-0.00001
+    mask = (df[column].abs() > 1e40)
+    df[column] = np.where(mask, 0.00001, df[column])
+macros = pd.read_csv('./Macro_factor.csv')
+factor_columns = factors+['date','id','ret_next']
+df = df[factor_columns]
+df['date'] = pd.to_datetime(df['date'])
+macros['date'] = pd.to_datetime(macros['date'])
+df = pd.merge(df,macros,on = 'date',how = 'left')
+df = df[df['date']<='2023-03-31']
+df.replace([np.inf, -np.inf], 0.00001, inplace=True)
+df.fillna(0, inplace=True)
+print("last df's columns are",df.columns)
+
+    
+factors = [i for i in df.columns if i.endswith('_factor')]+['size','volume','amount']
+results = {}
+
+for factor in factors:
+    df_touse = df.copy()
+    df_touse[factor] = np.random.normal(loc=0.0, scale=1.0, size=len(df))
+    grouped = df_touse.groupby('id')
+    stock_dict = {}
+    id_mapping = {}
+    i = 1
+    for stock, group in grouped:
+        id_mapping[i] = stock
+        stock_dict[i] = group
+        del stock_dict[i]['id']
+        i+=1
+    
     ii = 0
     setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(args.model_id,
                                                                                                   args.model,
@@ -180,13 +159,10 @@ else:
     
     exp = Exp(args,stock_dict)
     print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-    tempt = exp.test(setting, test=1)
-    print("the ture mse",tempt)
-    if args.do_predict:
-        print('>>>>>>>predicting : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-        exp.predict(setting, True)
+    mse = exp.test(setting, test=0)
+    results[factor] = mse
+    print(f"{factor} is over")
     del exp
     torch.cuda.empty_cache()
-                
-
-   
+results_df = pd.DataFrame.from_dict(results, orient='index', columns=[args.model])
+results_df.to_csv(f'feature_importance_{args.model}.csv')

@@ -61,24 +61,26 @@ class FixedEmbedding(nn.Module):
 class TemporalEmbedding(nn.Module):
     def __init__(self, d_model, embed_type='fixed'):
         super(TemporalEmbedding, self).__init__()
-
+        
+        id_size = 6000
         year_size = 25  # 根据你的数据集调整
         month_size = 13
         day_size = 32
         
         Embed = FixedEmbedding if embed_type == 'fixed' else nn.Embedding
+        self.id_embed = Embed(id_size,d_model)
         self.year_embed = Embed(year_size, d_model)
         self.month_embed = Embed(month_size, d_model)
         self.day_embed = Embed(day_size,d_model)
         
     def forward(self, x):
         x = x.long()
-
-        year_x = self.year_embed(x[:, :, 0]-2000)
-        month_x = self.month_embed(x[:, :, 1])
-        day_x = self.day_embed(x[:, :,2])
+        id_x = self.id_embed(x[:,:,0])
+        year_x = self.year_embed(x[:, :, 1]-2000)
+        month_x = self.month_embed(x[:, :, 2])
+        day_x = self.day_embed(x[:, :,3])
         
-        return year_x + month_x + day_x
+        return id_x + year_x + month_x + day_x
 
 
 
@@ -107,6 +109,7 @@ class DataEmbedding(nn.Module):
 
     def forward(self, x, x_mark):
         x = self.value_embedding(x) + self.temporal_embedding(x_mark) + self.position_embedding(x)
+        
         return self.dropout(x)
 
 

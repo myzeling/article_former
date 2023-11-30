@@ -338,18 +338,20 @@ class Train_Test(Dataset):
         
         if self.features == 'M' or self.features == 'MS':
             cols_data = list(df_raw.columns)[1:]
+            cols_data.remove(self.target)
             df_data = df_raw[cols_data]
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
 
         if self.scale:
-            train_data = df_data[border1:border2]
+            train_data = df_data[border1s[0]:border2s[0]]
             self.scaler.fit(train_data.values)
             data = self.scaler.transform(df_data.values)
         else:
             data = df_data.values
-
+        
         df_stamp = df_raw[['date']][border1:border2]
+        data = np.hstack((data, np.array(df_raw[self.target])[:, np.newaxis]))
         df_stamp['id'] = self.stock
         if self.timeenc == 0:
             df_stamp['year'] = df_stamp.date.apply(lambda row: row.year, 1)
